@@ -1,34 +1,49 @@
 package com.Hazavao.demo.endpoint;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
-import java.io.IOException;
-import okhttp3.OkHttpClient;
-import okhttp3.Request;
-import okhttp3.Response;
+import okhttp3.*;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 @RestController
 public class HazavaoController {
 
-    private static final String OPENAI_API_KEY = "sk-proj-TwUbI6Fdjpgh..."; // cle Tanjona
+    @Value("${openai.api-key}") // cle tanjona yml
+    private String openaiApiKey;
+
+    private final OkHttpClient client = new OkHttpClient();
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     @GetMapping("/hazavao")
-    public String getDefinition(@RequestParam String teny) throws IOException {
-        OkHttpClient client = new OkHttpClient();
+    public String getDefinition(@RequestParam String teny) {
         String prompt = "Donne la définition du mot \"" + teny + "\" en malgache, en 1 phrase.";
+        String requestBody = String.format(
+            "{\"model\":\"gpt-3.5-turbo\",\"messages\":[{\"role\":\"user\",\"content\":\"%s\"}]}",
+            prompt
+        );
 
         Request request = new Request.Builder()
             .url("https://api.openai.com/v1/chat/completions")
-            .post(okhttp3.RequestBody.create(
-                String.format("{\"model\":\"gpt-3.5-turbo\",\"messages\":[{\"role\":\"user\",\"content\":\"%s\"}]}", prompt),
-                okhttp3.MediaType.parse("application/json")
+            .post(RequestBody.create(
+                requestBody,
+                MediaType.parse("application/json")
             ))
-            .addHeader("Authorization", "Bearer " + OPENAI_API_KEY)
+            .addHeader("Authorization", "Bearer " + openaiApiKey)
             .build();
 
         try (Response response = client.newCall(request).execute()) {
-            return response.body().string(); 
+            if (!response.isSuccessful()) {
+                throw new RuntimeException("Erreur OpenAI: " + response.code());
+            }
+
+            
+            JsonNode jsonNode = objectMapper.readTree(response.body().string());
+            return jsonNode.path("choices").get(0).path("message").path("content").asText();
+        } catch (IOException e) {
+            throw new RuntimeException("Erreur lors de l'appel à l'API OpenAI", e);
         }
     }
 }
